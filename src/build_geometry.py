@@ -12,17 +12,16 @@ if not os.path.exists(PROJECT_PATH):
     print("ERROR: File not found! Save your manual project first.")
     exit()
 
-print("Launching CST (Force Mode)...")
+print("Launching CST (V3 - Material Fix)...")
 
 try:
-    # 1. Start CST
     cst = win32com.client.Dispatch("CSTStudio.Application")
     cst.OpenFile(PROJECT_PATH)
     time.sleep(5) 
     mws = cst.Active3D()
     print("SUCCESS: Connected.")
 
-    # 2. Define Parameters directly
+    # 1. Define Parameters
     print("Setting Parameters...")
     params = {
         "W": 30.0, "L": 28.0, 
@@ -32,15 +31,30 @@ try:
     for name, val in params.items():
         mws.StoreParameter(name, val)
 
-    # 3. WRITE VBA TO A FILE (The Fix)
-    print("Generating VBA Macro File...")
+    # 2. WRITE VBA (Now includes Material Definition)
+    print("Generating VBA Macro...")
     
     vba_code = """
-    ' CST SCRIPT TO BUILD GEOMETRY
+    ' CST SCRIPT V3
     
     Sub Main ()
         
-        ' 1. SUBSTRATE
+        ' A. DEFINE MATERIAL (Fixes the missing FR-4 error)
+        If Not Material.Exists("FR-4 (lossy)") Then
+            With Material
+                .Reset
+                .Name "FR-4 (lossy)"
+                .FrqType "all"
+                .Type "Normal" 
+                .Epsilon "4.3" 
+                .Mue "1.0" 
+                .Kappa "0.0" 
+                .TanD "0.025" 
+                .Create
+            End With
+        End If
+        
+        ' B. CREATE SUBSTRATE
         With Brick
             .Reset 
             .Name "Substrate" 
@@ -52,7 +66,7 @@ try:
             .Create
         End With
     
-        ' 2. GROUND
+        ' C. CREATE GROUND
         With Brick
             .Reset 
             .Name "Ground" 
@@ -64,7 +78,7 @@ try:
             .Create
         End With
     
-        ' 3. PATCH
+        ' D. CREATE PATCH
         With Brick
             .Reset 
             .Name "Patch" 
@@ -76,7 +90,7 @@ try:
             .Create
         End With
     
-        ' 4. SLOT PARTS
+        ' E. SLOT PARTS
         With Brick
             .Reset 
             .Name "Slot_Base" 
@@ -110,12 +124,12 @@ try:
             .Create
         End With
     
-        ' 5. BOOLEAN OPERATIONS
+        ' F. BOOLEAN OPERATIONS
         Solid.Add "component1:Slot_Base", "component1:Slot_Arm_L"
         Solid.Add "component1:Slot_Base", "component1:Slot_Arm_R"
         Solid.Subtract "component1:Patch", "component1:Slot_Base"
     
-        ' 6. PORT
+        ' G. PORT
         With DiscretePort 
             .Reset 
             .PortNumber "1" 
@@ -126,17 +140,16 @@ try:
             .Create 
         End With
         
-        ' Update View
+        ' H. FORCE UPDATE
         Rebuild
         
     End Sub
     """
 
-    # Save to temp file
     with open(TEMP_MACRO_PATH, "w") as f:
         f.write(vba_code)
 
-    # 4. EXECUTE FILE
+    # 3. EXECUTE
     print(f"Executing Macro: {TEMP_MACRO_PATH}")
     mws.RunMacro(TEMP_MACRO_PATH)
     
